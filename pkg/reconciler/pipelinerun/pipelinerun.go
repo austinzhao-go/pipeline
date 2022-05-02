@@ -1020,23 +1020,28 @@ func combineTaskRunAndTaskSpecLabels(pr *v1beta1.PipelineRun, pipelineTask *v1be
 }
 
 func combineTaskRunAndTaskSpecAnnotations(pr *v1beta1.PipelineRun, pipelineTask *v1beta1.PipelineTask) map[string]string {
-	var tsAnnotations map[string]string
-	trAnnotations := getTaskrunAnnotations(pr)
+	annotations := make(map[string]string)
+
+	taskRunSpec := pr.GetTaskRunSpec(pipelineTask.Name)
+	addAnnotationsByPrecedence(annotations, taskRunSpec.PipelineTaskRunSpecMetadata().Annotations)
+
+	addAnnotationsByPrecedence(annotations, getTaskrunAnnotations(pr))
 
 	if pipelineTask.TaskSpec != nil {
-		tsAnnotations = pipelineTask.TaskSpecMetadata().Annotations
+		addAnnotationsByPrecedence(annotations, pipelineTask.TaskSpecMetadata().Annotations)
 	}
 
-	// annotations from TaskRun takes higher precedence over the ones specified in Pipeline through TaskSpec
-	// initialize annotations with TaskRun annotations
-	annotations := trAnnotations
-	for key, value := range tsAnnotations {
-		// add annotations from TaskSpec if the annotation does not exist
+	return annotations
+}
+
+// Metadata Precedence Order: PipelineTaskRunSpec > PipelineRun > PipelineTaskSpec
+func addAnnotationsByPrecedence(annotations map[string]string, addedAnnotations map[string]string) {
+	for key, value := range addedAnnotations {
+		// add new annotations if the key not exists in current ones
 		if _, ok := annotations[key]; !ok {
 			annotations[key] = value
 		}
 	}
-	return annotations
 }
 
 // getFinallyTaskRunTimeout returns the timeout to set when creating the ResolvedPipelineRunTask, which is a finally Task.
