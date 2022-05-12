@@ -1041,11 +1041,7 @@ func (in *PipelineTaskRunSpec) DeepCopyInto(out *PipelineTaskRunSpec) {
 		*out = new(PipelineTaskMetadata)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.ComputeResources != nil {
-		in, out := &in.ComputeResources, &out.ComputeResources
-		*out = new(v1.ResourceRequirements)
-		(*in).DeepCopyInto(*out)
-	}
+	in.Resources.DeepCopyInto(&out.Resources)
 	return
 }
 
@@ -1594,6 +1590,20 @@ func (in *TaskResources) DeepCopyInto(out *TaskResources) {
 		*out = make([]TaskResource, len(*in))
 		copy(*out, *in)
 	}
+	if in.Limits != nil {
+		in, out := &in.Limits, &out.Limits
+		*out = make(v1.ResourceList, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val.DeepCopy()
+		}
+	}
+	if in.Requests != nil {
+		in, out := &in.Requests, &out.Requests
+		*out = make(v1.ResourceList, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val.DeepCopy()
+		}
+	}
 	return
 }
 
@@ -1773,6 +1783,20 @@ func (in *TaskRunResources) DeepCopyInto(out *TaskRunResources) {
 		*out = make([]TaskResourceBinding, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+	if in.Limits != nil {
+		in, out := &in.Limits, &out.Limits
+		*out = make(v1.ResourceList, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val.DeepCopy()
+		}
+	}
+	if in.Requests != nil {
+		in, out := &in.Requests, &out.Requests
+		*out = make(v1.ResourceList, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val.DeepCopy()
 		}
 	}
 	return

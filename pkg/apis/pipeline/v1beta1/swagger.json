@@ -1404,6 +1404,11 @@
         "pipelineTaskName": {
           "type": "string"
         },
+        "resources": {
+          "description": "Compute Resources required by the TaskRun. Cannot be updated. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/",
+          "default": {},
+          "$ref": "#/definitions/v1.ResourceRequirements"
+        },
         "sidecarOverrides": {
           "type": "array",
           "items": {
@@ -2215,7 +2220,7 @@
       }
     },
     "v1beta1.TaskResources": {
-      "description": "TaskResources allows a Pipeline to declare how its DeclaredPipelineResources should be provided to a Task as its inputs and outputs.",
+      "description": "TaskResources is overloaded to represent both PipelineResources and compute resources. PipelineResources are deprecated and will be removed, so this field will only represent compute resources in the future.",
       "type": "object",
       "properties": {
         "inputs": {
@@ -2227,6 +2232,14 @@
           },
           "x-kubernetes-list-type": "atomic"
         },
+        "limits": {
+          "description": "Limits describes the maximum amount of compute resources allowed for each Task. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/",
+          "type": "object",
+          "additionalProperties": {
+            "default": {},
+            "$ref": "#/definitions/k8s.io.apimachinery.pkg.api.resource.Quantity"
+          }
+        },
         "outputs": {
           "description": "Outputs holds the mapping from the PipelineResources declared in DeclaredPipelineResources to the input PipelineResources required by the Task.",
           "type": "array",
@@ -2235,6 +2248,14 @@
             "$ref": "#/definitions/v1beta1.TaskResource"
           },
           "x-kubernetes-list-type": "atomic"
+        },
+        "requests": {
+          "description": "Requests describes the minimum amount of compute resources required for each Task. If Requests is omitted for a container, it defaults to Limits if that is explicitly specified, otherwise to an implementation-defined value. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/",
+          "type": "object",
+          "additionalProperties": {
+            "default": {},
+            "$ref": "#/definitions/k8s.io.apimachinery.pkg.api.resource.Quantity"
+          }
         }
       }
     },
@@ -2365,7 +2386,7 @@
       }
     },
     "v1beta1.TaskRunResources": {
-      "description": "TaskRunResources allows a TaskRun to declare inputs and outputs TaskResourceBinding",
+      "description": "TaskRunResources is overloaded to represent both TaskResourceBinding and compute resources.",
       "type": "object",
       "properties": {
         "inputs": {
@@ -2377,6 +2398,14 @@
           },
           "x-kubernetes-list-type": "atomic"
         },
+        "limits": {
+          "description": "Limits describes the maximum amount of compute resources allowed for each TaskRun. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/",
+          "type": "object",
+          "additionalProperties": {
+            "default": {},
+            "$ref": "#/definitions/k8s.io.apimachinery.pkg.api.resource.Quantity"
+          }
+        },
         "outputs": {
           "description": "Outputs holds the inputs resources this task was invoked with",
           "type": "array",
@@ -2385,6 +2414,14 @@
             "$ref": "#/definitions/v1beta1.TaskResourceBinding"
           },
           "x-kubernetes-list-type": "atomic"
+        },
+        "requests": {
+          "description": "Requests describes the minimum amount of compute resources required for each TaskRun. If Requests is omitted for a container, it defaults to Limits if that is explicitly specified, otherwise to an implementation-defined value. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/",
+          "type": "object",
+          "additionalProperties": {
+            "default": {},
+            "$ref": "#/definitions/k8s.io.apimachinery.pkg.api.resource.Quantity"
+          }
         }
       }
     },

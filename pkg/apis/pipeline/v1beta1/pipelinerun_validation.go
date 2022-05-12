@@ -23,7 +23,6 @@ import (
 
 	"github.com/tektoncd/pipeline/pkg/apis/config"
 	"github.com/tektoncd/pipeline/pkg/apis/validate"
-	"github.com/tektoncd/pipeline/pkg/apis/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"knative.dev/pkg/apis"
 )
@@ -184,17 +183,36 @@ func (ps *PipelineRunSpec) validatePipelineTimeout(timeout time.Duration, errorM
 }
 
 func validateTaskRunSpec(ctx context.Context, trs PipelineTaskRunSpec) (errs *apis.FieldError) {
-	if trs.StepOverrides != nil {
-		errs = errs.Also(version.ValidateEnabledAPIFields(ctx, "stepOverrides", config.AlphaAPIFields).ViaField("stepOverrides"))
-		errs = errs.Also(validateStepOverrides(trs.StepOverrides).ViaField("stepOverrides"))
-	}
-	if trs.SidecarOverrides != nil {
-		errs = errs.Also(version.ValidateEnabledAPIFields(ctx, "sidecarOverrides", config.AlphaAPIFields).ViaField("sidecarOverrides"))
-		errs = errs.Also(validateSidecarOverrides(trs.SidecarOverrides).ViaField("sidecarOverrides"))
-	}
-	if trs.ComputeResources != nil {
-		errs = errs.Also(version.ValidateEnabledAPIFields(ctx, "computeResources", config.AlphaAPIFields).ViaField("computeResources"))
-		errs = errs.Also(validateTaskRunComputeResources(trs.ComputeResources, trs.StepOverrides))
+	cfg := config.FromContextOrDefaults(ctx)
+	if cfg.FeatureFlags.EnableAPIFields == config.AlphaAPIFields {
+		if trs.StepOverrides != nil {
+			errs = errs.Also(validateStepOverrides(trs.StepOverrides).ViaField("stepOverrides"))
+		}
+		if trs.SidecarOverrides != nil {
+			errs = errs.Also(validateSidecarOverrides(trs.SidecarOverrides).ViaField("sidecarOverrides"))
+		}
+		if trs.Resources.Size() > 0 {
+			errs = errs.Also(validateResourceRequirements(trs).ViaField("resources"))
+		}
+	} else {
+		if trs.StepOverrides != nil {
+			errs = errs.Also(apis.ErrDisallowedFields("stepOverrides"))
+		}
+		if trs.SidecarOverrides != nil {
+			errs = errs.Also(apis.ErrDisallowedFields("sidecarOverrides"))
+		}
 	}
 	return errs
+}
+
+// validateResourceRequirements validates if only step-level or task-level resource requirements are configured
+func validateResourceRequirements(trs PipelineTaskRunSpec) (errs *apis.FieldError) {
+	for _, taskRunStepOverride := range trs.StepOverrides {
+		if taskRunStepOverride.Resources.Size() > 0 {
+			return &apis.FieldError{
+				Message: "PipelineTaskRunSpec can't be configured with both step-level(stepOverrides.resources) and task-level(taskRunSpecs.resources) resource requirements",
+			}
+		}
+	}
+	return nil
 }

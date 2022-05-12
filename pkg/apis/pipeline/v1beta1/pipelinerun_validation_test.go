@@ -598,43 +598,28 @@ func TestPipelineRunSpec_Invalidate(t *testing.T) {
 		wantErr:     apis.ErrMissingField("taskRunSpecs[0].sidecarOverrides[0].name"),
 		withContext: enableAlphaAPIFields,
 	}, {
-		name: "invalid both step-level (stepOverrides.resources) and task-level (taskRunSpecs.resources) resource requirements configured",
-		spec: v1beta1.PipelineRunSpec{
-			PipelineRef: &v1beta1.PipelineRef{Name: "pipeline"},
-			TaskRunSpecs: []v1beta1.PipelineTaskRunSpec{
-				{
-					PipelineTaskName: "pipelineTask",
-					StepOverrides: []v1beta1.TaskRunStepOverride{{
-						Name: "stepOverride",
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{corev1.ResourceMemory: corev1resources.MustParse("1Gi")},
-						}},
-					},
-					ComputeResources: &corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{corev1.ResourceMemory: corev1resources.MustParse("2Gi")},
-					},
-				},
-			},
-		},
-		wantErr: apis.ErrMultipleOneOf(
-			"taskRunSpecs[0].stepOverrides.resources",
-			"taskRunSpecs[0].computeResources",
-		),
-		withContext: enableAlphaAPIFields,
-	}, {
-		name: "computeResources disallowed without alpha feature gate",
+		name: "invalid both step-level(stepOverrides.resources) and task-level(taskRunSpecs.resources) resource requirements configured",
 		spec: v1beta1.PipelineRunSpec{
 			PipelineRef: &v1beta1.PipelineRef{Name: "foo"},
 			TaskRunSpecs: []v1beta1.PipelineTaskRunSpec{
 				{
-					PipelineTaskName: "bar",
-					ComputeResources: &corev1.ResourceRequirements{
+					PipelineTaskName: "foo",
+					StepOverrides: []v1beta1.TaskRunStepOverride{{
+						Name: "foo",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{corev1.ResourceMemory: corev1resources.MustParse("1Gi")},
+						}},
+					},
+					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{corev1.ResourceMemory: corev1resources.MustParse("2Gi")},
 					},
 				},
 			},
 		},
-		wantErr: apis.ErrGeneric("computeResources requires \"enable-api-fields\" feature gate to be \"alpha\" but it is \"stable\"").ViaIndex(0).ViaField("taskRunSpecs"),
+		wantErr: &apis.FieldError{
+			Message: "PipelineTaskRunSpec can't be configured with both step-level(stepOverrides.resources) and task-level(taskRunSpecs.resources) resource requirements",
+		},
+		withContext: enableAlphaAPIFields,
 	}}
 
 	for _, ps := range tests {
@@ -669,40 +654,17 @@ func TestPipelineRunSpec_Validate(t *testing.T) {
 			},
 		},
 	}, {
-		name: "valid task-level (taskRunSpecs.resources) resource requirements configured",
+		name: "valid task-level(taskRunSpecs.resources) resource requirements configured",
 		spec: v1beta1.PipelineRunSpec{
-			PipelineRef: &v1beta1.PipelineRef{Name: "pipeline"},
+			PipelineRef: &v1beta1.PipelineRef{Name: "foo"},
 			TaskRunSpecs: []v1beta1.PipelineTaskRunSpec{{
-				PipelineTaskName: "pipelineTask",
+				PipelineTaskName: "foo",
 				StepOverrides: []v1beta1.TaskRunStepOverride{{
-					Name: "stepOverride",
+					Name: "foo",
 				}},
-				ComputeResources: &corev1.ResourceRequirements{
+				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{corev1.ResourceMemory: corev1resources.MustParse("2Gi")},
 				},
-			}},
-		},
-		withContext: enableAlphaAPIFields,
-	}, {
-		name: "valid sidecar and task-level (taskRunSpecs.resources) resource requirements configured",
-		spec: v1beta1.PipelineRunSpec{
-			PipelineRef: &v1beta1.PipelineRef{Name: "pipeline"},
-			TaskRunSpecs: []v1beta1.PipelineTaskRunSpec{{
-				PipelineTaskName: "pipelineTask",
-				StepOverrides: []v1beta1.TaskRunStepOverride{{
-					Name: "stepOverride",
-				}},
-				ComputeResources: &corev1.ResourceRequirements{
-					Requests: corev1.ResourceList{corev1.ResourceMemory: corev1resources.MustParse("2Gi")},
-				},
-				SidecarOverrides: []v1beta1.TaskRunSidecarOverride{{
-					Name: "sidecar",
-					Resources: corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceMemory: corev1resources.MustParse("4Gi"),
-						},
-					},
-				}},
 			}},
 		},
 		withContext: enableAlphaAPIFields,

@@ -80,6 +80,7 @@ func (ts *TaskSpec) Validate(ctx context.Context) (errs *apis.FieldError) {
 	errs = errs.Also(ValidateParameterVariables(ctx, ts.Steps, ts.Params))
 	errs = errs.Also(ValidateResourcesVariables(ctx, ts.Steps, ts.Resources))
 	errs = errs.Also(validateTaskContextVariables(ctx, ts.Steps))
+	errs = errs.Also(ValidateResourceRequirements(ctx, ts))
 	errs = errs.Also(validateResults(ctx, ts.Results).ViaField("results"))
 	return errs
 }
@@ -376,7 +377,47 @@ func ValidateResourcesVariables(ctx context.Context, steps []Step, resources *Ta
 	return validateVariables(ctx, steps, "resources.(?:inputs|outputs)", resourceNames)
 }
 
-// validateObjectUsage validates the usage of individual attributes of an object param and the usage of the entire object
+// ValidateResourceRequirements validates if only step-level or task-level resource requirements are configured
+func ValidateResourceRequirements(ctx context.Context, taskSpec *TaskSpec) *apis.FieldError {
+	if isResourceRequirementsInTaskLevel(taskSpec) {
+		if err := ValidateEnabledAPIFields(ctx, "task-level resources requirements", config.AlphaAPIFields); err != nil {
+			return err
+		}
+	}
+
+	if isResourceRequirementsInStepLevel(taskSpec) && isResourceRequirementsInTaskLevel(taskSpec) {
+		return &apis.FieldError{
+			Message: "TaskSpec can't be configured with both step-level(Task.spec.step.resources or Task.spec.stepTemplate.resources) and task-level(Task.spec.resources) resources requirements",
+			Paths:   []string{"resources"},
+		}
+	}
+
+	return nil
+}
+
+// isResourceRequirementsInStepLevel checks if any resource requirements are specified under step-level
+func isResourceRequirementsInStepLevel(taskSpec *TaskSpec) bool {
+	for _, step := range taskSpec.Steps {
+		if step.Resources.Size() > 0 {
+			return true
+		}
+	}
+	return taskSpec.StepTemplate != nil && taskSpec.StepTemplate.Resources.Size() > 0
+}
+
+// isResourceRequirementsInTaskLevel checks if any resource requirements are specified under task-level
+func isResourceRequirementsInTaskLevel(taskSpec *TaskSpec) bool {
+	if taskSpec == nil || taskSpec.Resources == nil {
+		return false
+	}
+	return taskSpec.Resources.Limits != nil || taskSpec.Resources.Requests != nil
+}
+
+// TODO (@chuangw6): Make sure an object param is not used as a whole when providing values for strings.
+// https://github.com/tektoncd/community/blob/main/teps/0075-object-param-and-result-types.md#variable-replacement-with-object-params
+// "When providing values for strings, Task and Pipeline authors can access
+// individual attributes of an object param; they cannot access the object
+// as whole (we could add support for this later)."
 func validateObjectUsage(ctx context.Context, steps []Step, params []ParamSpec) (errs *apis.FieldError) {
 	objectParameterNames := sets.NewString()
 	for _, p := range params {

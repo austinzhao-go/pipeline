@@ -2476,9 +2476,10 @@ func schema_pkg_apis_pipeline_v1beta1_PipelineTaskRunSpec(ref common.ReferenceCa
 							Ref: ref("github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1.PipelineTaskMetadata"),
 						},
 					},
-					"computeResources": {
+					"resources": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Compute resources to use for this TaskRun",
+							Description: "Compute Resources required by the TaskRun. Cannot be updated. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/",
+							Default:     map[string]interface{}{},
 							Ref:         ref("k8s.io/api/core/v1.ResourceRequirements"),
 						},
 					},
@@ -3909,7 +3910,7 @@ func schema_pkg_apis_pipeline_v1beta1_TaskResources(ref common.ReferenceCallback
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "TaskResources allows a Pipeline to declare how its DeclaredPipelineResources should be provided to a Task as its inputs and outputs.",
+				Description: "TaskResources is overloaded to represent both PipelineResources and compute resources. PipelineResources are deprecated and will be removed, so this field will only represent compute resources in the future.",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"inputs": {
@@ -3950,11 +3951,41 @@ func schema_pkg_apis_pipeline_v1beta1_TaskResources(ref common.ReferenceCallback
 							},
 						},
 					},
+					"limits": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Limits describes the maximum amount of compute resources allowed for each Task. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/",
+							Type:        []string{"object"},
+							AdditionalProperties: &spec.SchemaOrBool{
+								Allows: true,
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Default: map[string]interface{}{},
+										Ref:     ref("k8s.io/apimachinery/pkg/api/resource.Quantity"),
+									},
+								},
+							},
+						},
+					},
+					"requests": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Requests describes the minimum amount of compute resources required for each Task. If Requests is omitted for a container, it defaults to Limits if that is explicitly specified, otherwise to an implementation-defined value. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/",
+							Type:        []string{"object"},
+							AdditionalProperties: &spec.SchemaOrBool{
+								Allows: true,
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Default: map[string]interface{}{},
+										Ref:     ref("k8s.io/apimachinery/pkg/api/resource.Quantity"),
+									},
+								},
+							},
+						},
+					},
 				},
 			},
 		},
 		Dependencies: []string{
-			"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1.TaskResource"},
+			"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1.TaskResource", "k8s.io/apimachinery/pkg/api/resource.Quantity"},
 	}
 }
 
@@ -4210,7 +4241,7 @@ func schema_pkg_apis_pipeline_v1beta1_TaskRunResources(ref common.ReferenceCallb
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "TaskRunResources allows a TaskRun to declare inputs and outputs TaskResourceBinding",
+				Description: "TaskRunResources is overloaded to represent both TaskResourceBinding and compute resources.",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"inputs": {
@@ -4251,11 +4282,41 @@ func schema_pkg_apis_pipeline_v1beta1_TaskRunResources(ref common.ReferenceCallb
 							},
 						},
 					},
+					"limits": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Limits describes the maximum amount of compute resources allowed for each TaskRun. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/",
+							Type:        []string{"object"},
+							AdditionalProperties: &spec.SchemaOrBool{
+								Allows: true,
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Default: map[string]interface{}{},
+										Ref:     ref("k8s.io/apimachinery/pkg/api/resource.Quantity"),
+									},
+								},
+							},
+						},
+					},
+					"requests": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Requests describes the minimum amount of compute resources required for each TaskRun. If Requests is omitted for a container, it defaults to Limits if that is explicitly specified, otherwise to an implementation-defined value. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/",
+							Type:        []string{"object"},
+							AdditionalProperties: &spec.SchemaOrBool{
+								Allows: true,
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Default: map[string]interface{}{},
+										Ref:     ref("k8s.io/apimachinery/pkg/api/resource.Quantity"),
+									},
+								},
+							},
+						},
+					},
 				},
 			},
 		},
 		Dependencies: []string{
-			"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1.TaskResourceBinding"},
+			"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1.TaskResourceBinding", "k8s.io/apimachinery/pkg/api/resource.Quantity"},
 	}
 }
 

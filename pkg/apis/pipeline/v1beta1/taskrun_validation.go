@@ -24,7 +24,6 @@ import (
 	"github.com/tektoncd/pipeline/pkg/apis/config"
 	"github.com/tektoncd/pipeline/pkg/apis/validate"
 	"github.com/tektoncd/pipeline/pkg/apis/version"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"knative.dev/pkg/apis"
 )
@@ -68,6 +67,7 @@ func (ts *TaskRunSpec) Validate(ctx context.Context) (errs *apis.FieldError) {
 	if ts.StepOverrides != nil {
 		errs = errs.Also(version.ValidateEnabledAPIFields(ctx, "stepOverrides", config.AlphaAPIFields).ViaField("stepOverrides"))
 		errs = errs.Also(validateStepOverrides(ts.StepOverrides).ViaField("stepOverrides"))
+		errs = errs.Also(validateStepOverridesResourceRequirements(ts.Resources, ts.StepOverrides).ViaField("stepOverrides"))
 	}
 	if ts.SidecarOverrides != nil {
 		errs = errs.Also(version.ValidateEnabledAPIFields(ctx, "sidecarOverrides", config.AlphaAPIFields).ViaField("sidecarOverrides"))
@@ -145,17 +145,25 @@ func validateStepOverrides(overrides []TaskRunStepOverride) (errs *apis.FieldErr
 	return errs
 }
 
-// validateTaskRunComputeResources ensures that compute resources are not configured at both the step level and the task level
-func validateTaskRunComputeResources(computeResources *corev1.ResourceRequirements, overrides []TaskRunStepOverride) (errs *apis.FieldError) {
+// validateStepOverridesResourceRequirements validates if both step-level and task-level resource requirements are configured
+func validateStepOverridesResourceRequirements(resources *TaskRunResources, overrides []TaskRunStepOverride) (errs *apis.FieldError) {
 	for _, override := range overrides {
-		if override.Resources.Size() != 0 && computeResources != nil {
-			return apis.ErrMultipleOneOf(
-				"stepOverrides.resources",
-				"computeResources",
-			)
+		if override.Resources.Size() > 0 && isResourceRequirementsInTaskRun(resources) {
+			return &apis.FieldError{
+				Message: "TaskRun can't be configured with both step-level(stepOverrides.resources) and task-level(TaskRun.resources) resource requirements",
+				Paths:   []string{"resources"},
+			}
 		}
 	}
 	return nil
+}
+
+// isResourceRequirementsInTaskRun checks if resource requirements are configured in TaskRun under task-level
+func isResourceRequirementsInTaskRun(resources *TaskRunResources) bool {
+	if resources == nil {
+		return false
+	}
+	return resources.Limits != nil || resources.Requests != nil
 }
 
 func validateSidecarOverrides(overrides []TaskRunSidecarOverride) (errs *apis.FieldError) {

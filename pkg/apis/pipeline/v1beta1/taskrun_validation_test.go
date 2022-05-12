@@ -516,41 +516,28 @@ func TestTaskRunSpec_Invalidate(t *testing.T) {
 		wantErr: apis.ErrMissingField("sidecarOverrides[0].name"),
 		wc:      enableAlphaAPIFields,
 	}, {
-		name: "invalid both step-level (stepOverrides.resources) and task-level (spec.computeResources) resource requirements",
+		name: "invalid both step-level(stepOverrides.resources) and task-level(TaskRun.resources) resource requirements",
 		spec: v1beta1.TaskRunSpec{
 			TaskRef: &v1beta1.TaskRef{Name: "task"},
 			StepOverrides: []v1beta1.TaskRunStepOverride{{
-				Name: "stepOverride",
+				Name: "foo",
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
 						corev1.ResourceMemory: corev1resources.MustParse("1Gi"),
 					},
 				},
 			}},
-			ComputeResources: &corev1.ResourceRequirements{
+			Resources: &v1beta1.TaskRunResources{
 				Requests: corev1.ResourceList{
 					corev1.ResourceMemory: corev1resources.MustParse("2Gi"),
 				},
 			},
 		},
-		wantErr: apis.ErrMultipleOneOf(
-			"stepOverrides.resources",
-			"computeResources",
-		),
+		wantErr: &apis.FieldError{
+			Message: "TaskRun can't be configured with both step-level(stepOverrides.resources) and task-level(TaskRun.resources) resource requirements",
+			Paths:   []string{"stepOverrides.resources"},
+		},
 		wc: enableAlphaAPIFields,
-	}, {
-		name: "computeResources disallowed without alpha feature gate",
-		spec: v1beta1.TaskRunSpec{
-			TaskRef: &v1beta1.TaskRef{
-				Name: "foo",
-			},
-			ComputeResources: &corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceMemory: corev1resources.MustParse("2Gi"),
-				},
-			},
-		},
-		wantErr: apis.ErrGeneric("computeResources requires \"enable-api-fields\" feature gate to be \"alpha\" but it is \"stable\""),
 	}}
 
 	for _, ts := range tests {
@@ -620,33 +607,14 @@ func TestTaskRunSpec_Validate(t *testing.T) {
 			},
 		},
 	}, {
-		name: "valid task-level (spec.resources) resource requirements",
+		name: "valid task-level(TaskRun.resources) resource requirements",
 		spec: v1beta1.TaskRunSpec{
 			TaskRef: &v1beta1.TaskRef{Name: "task"},
-			ComputeResources: &corev1.ResourceRequirements{
+			Resources: &v1beta1.TaskRunResources{
 				Requests: corev1.ResourceList{
 					corev1.ResourceMemory: corev1resources.MustParse("2Gi"),
 				},
 			},
-		},
-		wc: enableAlphaAPIFields,
-	}, {
-		name: "valid sidecar and task-level (spec.resources) resource requirements",
-		spec: v1beta1.TaskRunSpec{
-			TaskRef: &v1beta1.TaskRef{Name: "task"},
-			ComputeResources: &corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceMemory: corev1resources.MustParse("2Gi"),
-				},
-			},
-			SidecarOverrides: []v1beta1.TaskRunSidecarOverride{{
-				Name: "sidecar",
-				Resources: corev1.ResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceMemory: corev1resources.MustParse("4Gi"),
-					},
-				},
-			}},
 		},
 		wc: enableAlphaAPIFields,
 	}}
