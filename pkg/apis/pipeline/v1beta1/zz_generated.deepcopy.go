@@ -1589,6 +1589,20 @@ func (in *TaskResources) DeepCopyInto(out *TaskResources) {
 		*out = make([]TaskResource, len(*in))
 		copy(*out, *in)
 	}
+	if in.Limits != nil {
+		in, out := &in.Limits, &out.Limits
+		*out = make(v1.ResourceList, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val.DeepCopy()
+		}
+	}
+	if in.Requests != nil {
+		in, out := &in.Requests, &out.Requests
+		*out = make(v1.ResourceList, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val.DeepCopy()
+		}
+	}
 	return
 }
 

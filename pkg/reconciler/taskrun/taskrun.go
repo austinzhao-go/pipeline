@@ -360,10 +360,27 @@ func (c *Reconciler) prepare(ctx context.Context, tr *v1beta1.TaskRun) (*v1beta1
 		return nil, nil, controller.NewPermanentError(err)
 	}
 
-	if err := validateTaskSpecRequestResources(ctx, taskSpec); err != nil {
-		logger.Errorf("TaskRun %s taskSpec request resources are invalid: %v", tr.Name, err)
+	if isResourcesRequirementsInStepLevel(taskSpec) && isResourcesRequirementsInTaskLevel(taskSpec) {
+		err := fmt.Errorf("TaskRun %s can't be configured with both step-level and task-level resources requirements", tr.Name)
 		tr.Status.MarkResourceFailed(podconvert.ReasonFailedValidation, err)
 		return nil, nil, controller.NewPermanentError(err)
+	} else if isResourcesRequirementsInStepLevel(taskSpec) {
+		if err := validateStepLevelResourcesRequirements(taskSpec); err != nil {
+			tr.Status.MarkResourceFailed(podconvert.ReasonFailedValidation, err)
+			return nil, nil, controller.NewPermanentError(err)
+		}
+	} else if isResourcesRequirementsInTaskLevel(taskSpec) {
+		// validate task level
+		if err := validateTaskLevelResourcesRequirements(taskSpec); err != nil {
+			tr.Status.MarkResourceFailed(podconvert.ReasonFailedValidation, err)
+			return nil, nil, controller.NewPermanentError(err)
+		}
+		// updatewithTask
+		if err := updateByTaskLevelResourcesRequirements(taskSpec); err != nil {
+			tr.Status.MarkResourceFailed(podconvert.ReasonFailedValidation, err)
+			return nil, nil, controller.NewPermanentError(err)
+		}
+		// updatewithTaskrun
 	}
 
 	if err := ValidateResolvedTaskResources(ctx, tr.Spec.Params, []v1beta1.Param{}, rtr); err != nil {

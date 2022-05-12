@@ -18,9 +18,12 @@ package taskrun
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/tektoncd/pipeline/pkg/apis/resource/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/tektoncd/pipeline/pkg/apis/config"
@@ -549,4 +552,360 @@ func TestValidateOverrides(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_validateTaskLevelResourcesRequirements_validResourcesRequirements(t *testing.T) {
+	tcs := []struct {
+		name     string
+		taskSpec *v1beta1.TaskSpec
+	}{{
+		name: "only valid 'limits' configured",
+		taskSpec: &v1beta1.TaskSpec{
+			Resources: &v1beta1.TaskResources{
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("4"),
+					corev1.ResourceMemory: resource.MustParse("8Gi"),
+				},
+			},
+		},
+	}, {
+		name: "only valid 'requests' configured",
+		taskSpec: &v1beta1.TaskSpec{
+			Resources: &v1beta1.TaskResources{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("8"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				},
+			},
+		},
+	}, {
+		name: "valid 'requests' <= 'limits' configured",
+		taskSpec: &v1beta1.TaskSpec{
+			Resources: &v1beta1.TaskResources{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("8"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("8"),
+					corev1.ResourceMemory: resource.MustParse("8Gi"),
+				},
+			},
+		},
+	}}
+
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := validateTaskLevelResourcesRequirements(tc.taskSpec); err != nil {
+				t.Errorf("Expected no errors when validating valid task-level resources requirements, but got: %v", err)
+			}
+		})
+	}
+}
+
+func Test_validateTaskLevelResourcesRequirements_invalidResourcesRequirements(t *testing.T) {
+	tcs := []struct {
+		name     string
+		taskSpec *v1beta1.TaskSpec
+	}{{
+		name: "invalid 'cpu' requests > limits configured",
+		taskSpec: &v1beta1.TaskSpec{
+			Resources: &v1beta1.TaskResources{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("8"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
+			},
+		},
+	}, {
+		name: "invalid 'memory' requests > limits configured",
+		taskSpec: &v1beta1.TaskSpec{
+			Resources: &v1beta1.TaskResources{
+				Requests: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("8Gi"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				},
+			},
+		},
+	}, {
+		name: "at least one invalid 'requests' > 'limits' configured",
+		taskSpec: &v1beta1.TaskSpec{
+			Resources: &v1beta1.TaskResources{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("8.1"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("8"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				},
+			},
+		},
+	}}
+
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := validateTaskLevelResourcesRequirements(tc.taskSpec); err == nil {
+				t.Errorf("Expected errors when validating invalid task-level resources requirements, but got none")
+			}
+		})
+	}
+}
+
+func Test_updateByTaskLevelResourcesRequirements(t *testing.T) {
+	tcs := []struct {
+		name     string
+		taskSpec *v1beta1.TaskSpec
+	}{{
+		name: "only 'requests' configured in task level",
+		taskSpec: &v1beta1.TaskSpec{
+			Steps: []v1beta1.Step{{
+				Name: "step-1",
+			}, {
+				Name: "step-2",
+			}},
+			Resources: &v1beta1.TaskResources{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("8"),
+				},
+			},
+		},
+	}, {
+		name: "only 'limits' configured in task level",
+		taskSpec: &v1beta1.TaskSpec{
+			Steps: []v1beta1.Step{{
+				Name: "step-1",
+			}, {
+				Name: "step-2",
+			}},
+			Resources: &v1beta1.TaskResources{
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
+			},
+		},
+	}, {
+		name: "both 'requests' and 'limits' configured in task level",
+		taskSpec: &v1beta1.TaskSpec{
+			Steps: []v1beta1.Step{{
+				Name: "step-1",
+			}, {
+				Name: "step-2",
+			}},
+			Resources: &v1beta1.TaskResources{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("8"),
+				},
+			},
+		},
+	}, {
+		name: "both 'cpu' and 'memory' configured in task level",
+		taskSpec: &v1beta1.TaskSpec{
+			Steps: []v1beta1.Step{{
+				Name: "step-1",
+			}, {
+				Name: "step-2",
+			}},
+			Resources: &v1beta1.TaskResources{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("4"),
+					corev1.ResourceMemory: resource.MustParse("500Mi"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("8"),
+					corev1.ResourceMemory: resource.MustParse("1Gi"),
+				},
+			},
+		},
+	},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := updateByTaskLevelResourcesRequirements(tc.taskSpec); err != nil {
+				t.Errorf("Expected no errors when updating by task-level resources requirements, but got %v: ", err)
+			}
+			if err := verifyUpdateByTaskLevelResourcesRequirements(tc.taskSpec); err != nil {
+				t.Errorf("Expected no errors when verifying step-level resources requirements updated by task-level, but got %v: ", err)
+			}
+		})
+	}
+}
+
+// verifyUpdateByTaskLevelResourcesRequirements() verifies if step-level (containers) are correctly updated by task-level resources requirements
+func verifyUpdateByTaskLevelResourcesRequirements(taskSpec *v1beta1.TaskSpec) error {
+	sumOfStepLevelRequests := make(map[corev1.ResourceName]resource.Quantity)
+
+	for _, step := range taskSpec.Steps {
+		// sum 'request" of each step up
+		for resourceName, request := range step.Resources.Requests {
+			currentRequest := sumOfStepLevelRequests[resourceName]
+			currentRequest.Add(request)
+			sumOfStepLevelRequests[resourceName] = currentRequest
+		}
+		for resourceName, limit := range step.Resources.Limits {
+			currentLimit := taskSpec.Resources.Limits[resourceName]
+			// verify if step-level limits <= task-level
+			if limit.Cmp(currentLimit) == 1 {
+				return fmt.Errorf("Step-level resources requirements over limits by task-level")
+			}
+		}
+	}
+
+	for resourceName, request := range sumOfStepLevelRequests {
+		// verify if the sum of step-level requests <= task-level
+		if request.Cmp(taskSpec.Resources.Requests[resourceName]) == 1 {
+			return fmt.Errorf("Step-level resources requirements over requests by task-level")
+		}
+	}
+
+	return nil
+}
+
+func Test_updateByTaskLevelResourcesRequirements_withSideCar(t *testing.T) {
+	tcs := []struct {
+		name     string
+		taskSpec *v1beta1.TaskSpec
+	}{{
+		name: "only 'requests' configured in task level and sidecar",
+		taskSpec: &v1beta1.TaskSpec{
+			Steps: []v1beta1.Step{{
+				Name: "step-1",
+			}, {
+				Name: "step-2",
+			}},
+			Sidecars: []v1beta1.Sidecar{{
+				Name: "sidecar-1",
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("2"),
+					},
+				},
+			}},
+			Resources: &v1beta1.TaskResources{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("8"),
+				},
+			},
+		},
+	}, {
+		name: "only 'limits' configured in task level and sidecar",
+		taskSpec: &v1beta1.TaskSpec{
+			Steps: []v1beta1.Step{{
+				Name: "step-1",
+			}, {
+				Name: "step-2",
+			}},
+			Sidecars: []v1beta1.Sidecar{{
+				Name: "sidecar-1",
+				Resources: corev1.ResourceRequirements{
+					Limits: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("2"),
+					},
+				},
+			}},
+			Resources: &v1beta1.TaskResources{
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
+			},
+		},
+	}, {
+		name: "both 'requests' and 'limits' configured in task level and sidecar",
+		taskSpec: &v1beta1.TaskSpec{
+			Steps: []v1beta1.Step{{
+				Name: "step-1",
+			}, {
+				Name: "step-2",
+			}},
+			Sidecars: []v1beta1.Sidecar{{
+				Name: "sidecar-1",
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("2"),
+					},
+					Limits: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("2"),
+					},
+				},
+			}},
+			Resources: &v1beta1.TaskResources{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("8"),
+				},
+			},
+		},
+	}, {
+		name: "both 'cpu' and 'memory' configured in task level and sidecar",
+		taskSpec: &v1beta1.TaskSpec{
+			Steps: []v1beta1.Step{{
+				Name: "step-1",
+			}, {
+				Name: "step-2",
+			}},
+			Sidecars: []v1beta1.Sidecar{{
+				Name: "sidecar-1",
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("2"),
+						corev1.ResourceMemory: resource.MustParse("250Mi"),
+					},
+					Limits: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("2"),
+						corev1.ResourceMemory: resource.MustParse("500Mi"),
+					},
+				},
+			}},
+			Resources: &v1beta1.TaskResources{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("4"),
+					corev1.ResourceMemory: resource.MustParse("500Mi"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("8"),
+					corev1.ResourceMemory: resource.MustParse("1Gi"),
+				},
+			},
+		},
+	},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			tcBeforeUpdate := tc
+			if err := updateByTaskLevelResourcesRequirements(tc.taskSpec); err != nil {
+				t.Errorf("Expected no errors when updating by task-level resources requirements, but got %v: ", err)
+			}
+			if err := verifySideCarResourcesRequirements(tcBeforeUpdate.taskSpec, tc.taskSpec); err != nil {
+				t.Errorf("Expected no errors when verifying sidecar resources requirements after applying task-level resources requirements, but got %v: ", err)
+			}
+		})
+	}
+}
+
+// verifySideCarResourcesRequirements() verify if sidecar resources requirements not change after applying task-level resources requirements
+func verifySideCarResourcesRequirements(taskSpecBeforeUpdate *v1beta1.TaskSpec, taskSpecAfterUpdate *v1beta1.TaskSpec) error {
+	for id, sidecar := range taskSpecAfterUpdate.Sidecars {
+		for resourceName, request := range sidecar.Resources.Requests {
+			if request.Cmp(taskSpecBeforeUpdate.Sidecars[id].Resources.Requests[resourceName]) != 0 {
+				return fmt.Errorf("Sidecar resources 'request' of %v changed", resourceName)
+			}
+		}
+		for resourceName, limit := range sidecar.Resources.Limits {
+			if limit.Cmp(taskSpecBeforeUpdate.Sidecars[id].Resources.Limits[resourceName]) != 0 {
+				return fmt.Errorf("Sidecar resources 'limit' of %v changed", resourceName)
+			}
+		}
+	}
+	return nil
 }
