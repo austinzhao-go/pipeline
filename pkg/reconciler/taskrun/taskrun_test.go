@@ -3912,9 +3912,7 @@ status:
 	}
 }
 
-func Test_validateTaskSpecRequestResources_ValidResources(t *testing.T) {
-	ctx := context.Background()
-
+func Test_validateStepLevelResourcesRequirements_validResourcesRequirements(t *testing.T) {
 	tcs := []struct {
 		name     string
 		taskSpec *v1beta1.TaskSpec
@@ -4019,16 +4017,15 @@ func Test_validateTaskSpecRequestResources_ValidResources(t *testing.T) {
 
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := validateTaskSpecRequestResources(ctx, tc.taskSpec); err != nil {
-				t.Fatalf("Expected to see error when validating invalid TaskSpec resources but saw none")
+			if err := validateStepLevelResourcesRequirements(tc.taskSpec); err != nil {
+				t.Errorf("Expected no errors when validating valid step-level resources requirements, but got: %v", err)
 			}
 		})
 	}
 
 }
 
-func Test_validateTaskSpecRequestResources_InvalidResources(t *testing.T) {
-	ctx := context.Background()
+func Test_validateStepLevelResourcesRequirements_invalidResourcesRequirements(t *testing.T) {
 	tcs := []struct {
 		name     string
 		taskSpec *v1beta1.TaskSpec
@@ -4075,8 +4072,8 @@ func Test_validateTaskSpecRequestResources_InvalidResources(t *testing.T) {
 
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := validateTaskSpecRequestResources(ctx, tc.taskSpec); err == nil {
-				t.Fatalf("Expected to see error when validating invalid TaskSpec resources but saw none")
+			if err := validateStepLevelResourcesRequirements(tc.taskSpec); err == nil {
+				t.Errorf("Expected errors when validating invalid step-level resources requirements, but got none")
 			}
 		})
 	}

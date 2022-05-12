@@ -70,6 +70,16 @@ type TaskResources struct {
 	// DeclaredPipelineResources to the input PipelineResources required by the Task.
 	// +listType=atomic
 	Outputs []TaskResource `json:"outputs,omitempty"`
+	// Limits describes the maximum amount of compute resources allowed.
+	// More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+	// +optional
+	Limits v1.ResourceList `json:"limits,omitempty"`
+	// Requests describes the minimum amount of compute resources required.
+	// If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+	// otherwise to an implementation-defined value.
+	// More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+	// +optional
+	Requests v1.ResourceList `json:"requests,omitempty"`
 }
 
 // TaskResource defines an input or output Resource declared as a requirement

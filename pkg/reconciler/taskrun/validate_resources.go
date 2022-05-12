@@ -223,29 +223,85 @@ func ValidateResolvedTaskResources(ctx context.Context, params []v1beta1.Param, 
 	return nil
 }
 
-func validateTaskSpecRequestResources(ctx context.Context, taskSpec *v1beta1.TaskSpec) error {
-	if taskSpec != nil {
-		for _, step := range taskSpec.Steps {
-			for k, request := range step.Resources.Requests {
-				// First validate the limit in step
-				if limit, ok := step.Resources.Limits[k]; ok {
-					if (&limit).Cmp(request) == -1 {
-						return fmt.Errorf("Invalid request resource value: %v must be less or equal to limit %v", request.String(), limit.String())
-					}
-				} else if taskSpec.StepTemplate != nil {
-					// If step doesn't configure the limit, validate the limit in stepTemplate
-					if limit, ok := taskSpec.StepTemplate.Resources.Limits[k]; ok {
-						if (&limit).Cmp(request) == -1 {
-							return fmt.Errorf("Invalid request resource value: %v must be less or equal to limit %v", request.String(), limit.String())
-						}
-					}
+// validateStepLevelResourcesRequirements() validates step-level resources requirements under 'Task.TaskSpec.Step' and 'Task.TaskSpec.StepTemplate'
+func validateStepLevelResourcesRequirements(taskSpec *v1beta1.TaskSpec) error {
+	if !isResourcesRequirementsInStepLevel(taskSpec) {
+		return nil
+	}
 
+	for _, step := range taskSpec.Steps {
+		for key, request := range step.Resources.Requests {
+			// First validate the limit in step
+			if limit, ok := step.Resources.Limits[key]; ok {
+				// Check if limit < request (so out of limit)
+				if (&limit).Cmp(request) == -1 {
+					return fmt.Errorf("invalid request resource value: %v must be less or equal to limit %v", request.String(), limit.String())
+				}
+			} else if taskSpec.StepTemplate != nil {
+				// If step doesn't configure the limit, validate the limit in stepTemplate
+				if limit, ok := taskSpec.StepTemplate.Resources.Limits[key]; ok {
+					if (&limit).Cmp(request) == -1 {
+						return fmt.Errorf("invalid request resource value: %v must be less or equal to limit %v", request.String(), limit.String())
+					}
 				}
 
 			}
 		}
 	}
 
+	return nil
+}
+
+// isResourcesRequirementsInStepLevel() checks if any resources requirements specified under step-level
+func isResourcesRequirementsInStepLevel(taskSpec *v1beta1.TaskSpec) bool {
+	if taskSpec == nil {
+		return false
+	}
+
+	for _, step := range taskSpec.Steps {
+		if step.Resources.String() != "" {
+			return true
+		}
+	}
+
+	return taskSpec.StepTemplate != nil && taskSpec.StepTemplate.Resources.String() != ""
+}
+
+// isResourcesRequirementsInTaskLevel() checks if any resources requirements specified under task-level
+func isResourcesRequirementsInTaskLevel(taskSpec *v1beta1.TaskSpec) bool {
+	if taskSpec == nil || taskSpec.Resources == nil {
+		return false
+	}
+	return taskSpec.Resources.Limits != nil || taskSpec.Resources.Requests != nil
+}
+
+// validateTaskLevelResourcesRequirements() validates task-level resource requirements under 'Task.TaskSpec'
+func validateTaskLevelResourcesRequirements(taskSpec *v1beta1.TaskSpec) error {
+	if !isResourcesRequirementsInTaskLevel(taskSpec) {
+		return nil
+	}
+
+	for key, request := range taskSpec.Resources.Requests {
+		if limit, ok := taskSpec.Resources.Limits[key]; ok {
+			// Check if limit < request (so out of limit)
+			if (&limit).Cmp(request) == -1 {
+				return fmt.Errorf("invalid request resource value: %v must be less or equal to limit %v", request.String(), limit.String())
+			}
+		}
+	}
+
+	return nil
+}
+
+// updateByTaskLevelResourcesRequirements() updates 1st avaliable step with task-level resources requirements
+func updateByTaskLevelResourcesRequirements(taskSpec *v1beta1.TaskSpec) error {
+	if taskSpec == nil || taskSpec.Steps == nil {
+		return fmt.Errorf("no step avaliable to be configured by task-level resources requirements")
+	}
+	for id := range taskSpec.Steps {
+		taskSpec.Steps[id].Resources.Limits = taskSpec.Resources.Limits
+	}
+	taskSpec.Steps[0].Resources.Requests = taskSpec.Resources.Requests
 	return nil
 }
 
