@@ -28,6 +28,7 @@ import (
 	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	"github.com/tektoncd/pipeline/test/diff"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"knative.dev/pkg/apis"
 )
@@ -398,7 +399,72 @@ func TestTaskSpecValidate(t *testing.T) {
 				hello "$(context.taskRun.namespace)"`,
 			}},
 		},
+	}, {
+		name: "valid step-level(step.resources) resources requirements",
+		fields: fields{
+			Steps: []v1beta1.Step{{
+				Name:  "step-1",
+				Image: "my-image",
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("2"),
+					},
+				},
+			}},
+		},
+	}, {
+		name: "valid step-level(stepTemplate.resources) resources requirements",
+		fields: fields{
+			Steps: []v1beta1.Step{{
+				Name:  "step-1",
+				Image: "my-image",
+			}},
+			StepTemplate: &v1beta1.StepTemplate{
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("2"),
+					},
+				},
+			},
+		},
+	}, {
+		name: "valid step-level(step.resources and stepTemplate.resources) resources requirements",
+		fields: fields{
+			Steps: []v1beta1.Step{{
+				Name:  "step-1",
+				Image: "my-image",
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("1"),
+					},
+				},
+			}},
+			StepTemplate: &v1beta1.StepTemplate{
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("1"),
+					},
+				},
+			},
+		},
+	}, {
+		name: "valid task-level(spec.resources) resources requirements",
+		fields: fields{
+			Steps: []v1beta1.Step{{
+				Name:  "step-1",
+				Image: "my-image",
+			}},
+			Resources: &v1beta1.TaskResources{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("8"),
+				},
+			},
+		},
 	}}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ts := &v1beta1.TaskSpec{
@@ -432,6 +498,7 @@ func TestTaskSpecValidateError(t *testing.T) {
 		name          string
 		fields        fields
 		expectedError apis.FieldError
+		withContext   func(context.Context) context.Context
 	}{{
 		name: "empty spec",
 		expectedError: apis.FieldError{
@@ -555,6 +622,7 @@ func TestTaskSpecValidateError(t *testing.T) {
 			Paths:   []string{"params"},
 			Details: "Names: \nMust only contain alphanumeric characters, hyphens (-), underscores (_), and dots (.)\nMust begin with a letter or an underscore (_)",
 		},
+		withContext: enableAlphaAPIFields,
 	}, {
 		name: "duplicated param names",
 		fields: fields{
@@ -659,6 +727,7 @@ func TestTaskSpecValidateError(t *testing.T) {
 			Message: `"object" type does not match default value's type: "string"`,
 			Paths:   []string{"params.task.type", "params.task.default.type"},
 		},
+		withContext: enableAlphaAPIFields,
 	}, {
 		name: "the spec of object type parameter misses the definition of properties",
 		fields: fields{
@@ -670,6 +739,7 @@ func TestTaskSpecValidateError(t *testing.T) {
 			Steps: validSteps,
 		},
 		expectedError: *apis.ErrMissingField(fmt.Sprintf("params.task.properties")),
+		withContext:   enableAlphaAPIFields,
 	}, {
 		name: "PropertySpec type is set with unsupported type",
 		fields: fields{
@@ -688,6 +758,7 @@ func TestTaskSpecValidateError(t *testing.T) {
 			Message: fmt.Sprintf("The value type specified for these keys %v is invalid", []string{"key1"}),
 			Paths:   []string{"params.task.properties"},
 		},
+		withContext: enableAlphaAPIFields,
 	}, {
 		name: "keys defined in properties are missed in default",
 		fields: fields{
@@ -709,6 +780,7 @@ func TestTaskSpecValidateError(t *testing.T) {
 			Message: fmt.Sprintf("Required key(s) %s for the parameter %s are not provided in default.", []string{"key2"}, "myobjectParam"),
 			Paths:   []string{"myobjectParam.properties", "myobjectParam.default"},
 		},
+		withContext: enableAlphaAPIFields,
 	}, {
 		name: "invalid step",
 		fields: fields{
@@ -879,6 +951,7 @@ func TestTaskSpecValidateError(t *testing.T) {
 			Message: `variable is not properly isolated in "not isolated: $(params.baz)"`,
 			Paths:   []string{"steps[0].args[0]"},
 		},
+		withContext: enableAlphaAPIFields,
 	}, {
 		name: "inferred array star not properly isolated",
 		fields: fields{
@@ -901,6 +974,7 @@ func TestTaskSpecValidateError(t *testing.T) {
 			Message: `variable is not properly isolated in "not isolated: $(params.baz[*])"`,
 			Paths:   []string{"steps[0].args[0]"},
 		},
+		withContext: enableAlphaAPIFields,
 	}, {
 		name: "Inexistent param variable in volumeMount with existing",
 		fields: fields{
@@ -923,6 +997,7 @@ func TestTaskSpecValidateError(t *testing.T) {
 			Message: `non-existent variable in "$(params.inexistent)-foo"`,
 			Paths:   []string{"steps[0].volumeMount[0].name"},
 		},
+		withContext: enableAlphaAPIFields,
 	}, {
 		name: "Inexistent param variable with existing",
 		fields: fields{
@@ -941,6 +1016,7 @@ func TestTaskSpecValidateError(t *testing.T) {
 			Message: `non-existent variable in "$(params.foo) && $(params.inexistent)"`,
 			Paths:   []string{"steps[0].args[0]"},
 		},
+		withContext: enableAlphaAPIFields,
 	}, {
 		name: "Multiple volumes with same name",
 		fields: fields{
@@ -1161,6 +1237,60 @@ func TestTaskSpecValidateError(t *testing.T) {
 			Message: "invalid value: -10s",
 			Paths:   []string{"steps[0].negative timeout"},
 		},
+	}, {
+		name: "invalid both step-level(step.resources) and task-level resources requirements",
+		fields: fields{
+			Steps: []v1beta1.Step{{
+				Name:  "step-1",
+				Image: "my-image",
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("2"),
+					},
+				},
+			}},
+			Resources: &v1beta1.TaskResources{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("8"),
+				},
+			},
+		},
+		expectedError: apis.FieldError{
+			Message: "TaskSpec can't be configured with both step-level(Task.spec.step.resources or Task.spec.stepTemplate.resources) and task-level(Task.spec.resources) resources requirements",
+			Paths:   []string{"resources"},
+		},
+		withContext: enableAlphaAPIFields,
+	}, {
+		name: "invalid both step-level(stepTemplate.resources) and task-level resources requirements",
+		fields: fields{
+			Steps: []v1beta1.Step{{
+				Name:  "step-1",
+				Image: "my-image",
+			}},
+			StepTemplate: &v1beta1.StepTemplate{
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("1"),
+					},
+				},
+			},
+			Resources: &v1beta1.TaskResources{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("8"),
+				},
+			},
+		},
+		expectedError: apis.FieldError{
+			Message: "TaskSpec can't be configured with both step-level(Task.spec.step.resources or Task.spec.stepTemplate.resources) and task-level(Task.spec.resources) resources requirements",
+			Paths:   []string{"resources"},
+		},
+		withContext: enableAlphaAPIFields,
 	}}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1173,8 +1303,13 @@ func TestTaskSpecValidateError(t *testing.T) {
 				Workspaces:   tt.fields.Workspaces,
 				Results:      tt.fields.Results,
 			}
-			ctx := getContextBasedOnFeatureFlag("alpha")
+
+			ctx := context.Background()
+			if tt.withContext != nil {
+				ctx = tt.withContext(ctx)
+			}
 			ts.SetDefaults(ctx)
+
 			err := ts.Validate(ctx)
 			if err == nil {
 				t.Fatalf("Expected an error, got nothing for %v", ts)

@@ -195,6 +195,9 @@ func validateTaskRunSpec(ctx context.Context, trs PipelineTaskRunSpec) (errs *ap
 		if trs.SidecarOverrides != nil {
 			errs = errs.Also(validateSidecarOverrides(trs.SidecarOverrides).ViaField("sidecarOverrides"))
 		}
+		if trs.Resources.Size() > 0 {
+			errs = errs.Also(validateResourceRequirements(trs).ViaField("resources"))
+		}
 	} else {
 		if trs.StepOverrides != nil {
 			errs = errs.Also(apis.ErrDisallowedFields("stepOverrides"))
@@ -204,4 +207,16 @@ func validateTaskRunSpec(ctx context.Context, trs PipelineTaskRunSpec) (errs *ap
 		}
 	}
 	return errs
+}
+
+// validateResourceRequirements validates if only step-level or task-level resource requirements are configured
+func validateResourceRequirements(trs PipelineTaskRunSpec) (errs *apis.FieldError) {
+	for _, taskRunStepOverride := range trs.StepOverrides {
+		if taskRunStepOverride.Resources.Size() > 0 {
+			return &apis.FieldError{
+				Message: "PipelineTaskRunSpec can't be configured with both step-level(stepOverrides.resources) and task-level(taskRunSpecs.resources) resource requirements",
+			}
+		}
+	}
+	return nil
 }

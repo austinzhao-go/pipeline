@@ -20,6 +20,7 @@ import (
 	"context"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/tektoncd/pipeline/pkg/apis/config"
@@ -603,6 +604,11 @@ type PipelineTaskRunSpec struct {
 
 	// +optional
 	Metadata *PipelineTaskMetadata `json:"metadata,omitempty"`
+	// Compute Resources required by the TaskRun.
+	// Cannot be updated.
+	// More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+	// +optional
+	Resources corev1.ResourceRequirements `json:"resources,omitempty" protobuf:"bytes,8,opt,name=resources"`
 }
 
 // GetTaskRunSpec returns the task specific spec for a given

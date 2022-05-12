@@ -52,6 +52,263 @@ requirements for `Step`containers, they must be treated as if they are running i
 Tekton adjusts `Step` resource requirements to comply with [LimitRanges](#limitrange-support).
 [ResourceQuotas](#resourcequota-support) are not currently supported.
 
+Instead of specifying resource requirements on each `Step`, users can choose to specify resource requirements at the Task-level. If users specify a Task-level resource request, it will ensure that the kubelet reserves only that amount of resources to execute the `Task`'s `Steps`.
+If users specify a Task-level resource limit, no `Step` may use more than that amount of resources.
+
+Each of these details is explained in more depth below.
+
+Some points to note:
+
+- Task-level resource requests and limits do not apply to sidecars which can be configured separately.
+- Users may not configure the Task-level and Step-level resource requirements (requests/limits)  simultaneously.
+
+### Configuring Task-level Resource Requirements
+
+Task-level resource requirements can be configured in `Task.Resources`, `TaskRun.Resources`, or `PipelineRun.TaskRunSpecs`.
+
+e.g.
+
+```yaml
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: foo 
+spec:
+  steps:
+    - name: foo1
+    - name: foo2
+  resources:
+    requests:
+      cpu: 1 
+    limits:
+      cpu: 2
+```
+
+### Specifying Resource Requirement in Task
+
+Users can specify compute resources either at the Step-level or the Task-level in `Task`.
+
+To specify compute resources at the Step-level, use `Task.Step` and `Task.StepTemplate`.
+To specify compute resources at the Task-level, use `Task.Resources`.
+
+e.g.
+
+Using `Task.Resources`:
+
+```yaml
+kind: Task
+spec:
+  resources:
+    requests:
+      cpu: 2
+```
+
+Rejected when configuring `Task.Step` and `Task.Resources`
+
+```yaml
+kind: Task
+spec:
+  steps:
+    - name: foo
+      resources:
+        requests:
+          cpu: 1
+  resources:
+    requests:
+      cpu: 2
+```
+
+Rejected when configuring `Task.StepTemplate` and `Task.Resources`:
+
+```yaml
+kind: Task
+spec:
+  steps:
+    - name: foo
+  stepTemplate:
+    resources:
+      requests:
+        cpu: 1
+  resources:
+    requests:
+      cpu: 2
+```
+
+### Specifying Resource Requirement in TaskRun/PipelineRun
+
+Users can specify compute resources either at the Step-level or the Task-level in `TaskRun`.
+
+To specify compute resources at the Step-level, use `TaskRun.StepOverrides`.
+To specify compute resources at the Task-level, use `TaskRun.Resources` or `PipelineRun.TaskRunSpecs`.
+
+e.g.
+
+Using `TaskRun.Resources`:
+
+```yaml
+kind: TaskRun
+spec:
+  resources:
+    requests:
+      cpu: 2
+```
+
+Rejected when configuring `TaskRun.StepOverrides` and `TaskRun.Resources`:  
+
+```yaml
+kind: TaskRun
+spec:
+  stepOverrides:
+    - name: foo
+      resources:
+        requests:
+          cpu: 1
+  resources:
+    requests:
+      cpu: 2 
+```
+
+Rejected when configuring `PipelineRun.TaskRunSpecs.StepOverrides` and `PipelineRun.TaskRunSpecs.Resources`:  
+
+```yaml
+kind: PipelineRun
+spec:
+  taskRunSpecs:
+    - pipelineTaskName: foo
+      stepOverrides:
+        - name: foo 
+          resources:
+            requests:
+              cpu: 1 
+      resources:
+        requests:
+          cpu: 2 
+```
+
+### Specifying Resource Requirements with LimitRange
+
+User can use `LimitRange` to configure min or max compute resources for a `Task` or `Step`.
+
+Here are examples with a task-level resource requirements:
+
+e.g.
+
+Applying min:
+
+```yaml
+kind: LimitRange
+spec:
+  limits:
+    - min:
+        cpu: 200m
+---
+kind: Task
+spec:
+  steps:
+    - name: step1 # applied with min
+    - name: step2 # applied with min
+    - name: step3 # not applied
+  resources:
+    requests:
+      cpu: 1
+```
+
+| Step name | CPU request |
+| --------- | ----------- |
+| step1     | 800m        |
+| step2     | 200m        |
+| step3     | N/A         |
+
+Here the 800m on step1 comes from `200m + (1 - 200m * 2)`.
+
+Applying max:
+
+```yaml
+kind: LimitRange
+spec:
+  limits:
+    - max:
+        cpu: 800m
+---
+kind: Task
+spec:
+  steps:
+    - name: step1 # applied with max
+    - name: step2 # applied with max
+    - name: step3 # not applied
+  resources:
+    requests:
+      cpu: 1
+```
+
+| Step name | CPU request |
+| --------- | ----------- |
+| step1     | 333m        |
+| step2     | 333m        |
+| step3     | 333m        |
+
+Here the 333m comes from `1 / 3` with number rounding to leave decimals out.
+
+Applying min and max:
+
+```yaml
+kind: LimitRange
+spec:
+  limits:
+    - min:
+        cpu: 200m
+    - max:
+        cpu: 700m
+---
+kind: Task
+spec:
+  steps:
+    - name: step1 # applied with min and max
+    - name: step2 # applied with min and max
+    - name: step3 # not applied
+  resources:
+    requests:
+      cpu: 1
+```
+
+| Step name | CPU request |
+| --------- | ----------- |
+| step1     | 400m        |
+| step2     | 400m        |
+| step3     | 200m        |  
+
+Here the 400m comes from the min `200` + the spread out `(1 - 200m * 2) / 3`.
+
+### Specifying Resource Requirements with Sidecar
+
+Users can specify compute resources separately for a sidecar while configuring task-level resource requirements.
+
+e.g.
+
+```yaml
+kind: Task
+spec:
+  steps:
+    - name: step1
+    - name: step2
+  sidecars:
+    - name: sidecar1
+      resources:
+        requests:
+          cpu: 750m
+        limits:
+          cpu: 1
+  resources:
+    requests:
+      cpu: 2
+```
+
+| Step/Sidecar name | CPU request | CPU limit |
+| ----------------- | ----------- | --------- |
+| step1             | 2           | N/A       |
+| step2             | N/A         | N/A       |
+| sidecar1          | 750m        | 1         |
+
 ## LimitRange Support
 
 Kubernetes allows users to configure [LimitRanges]((https://kubernetes.io/docs/concepts/policy/limit-range/)),

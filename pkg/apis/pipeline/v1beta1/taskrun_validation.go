@@ -66,6 +66,7 @@ func (ts *TaskRunSpec) Validate(ctx context.Context) (errs *apis.FieldError) {
 	if ts.StepOverrides != nil {
 		errs = errs.Also(ValidateEnabledAPIFields(ctx, "stepOverrides", config.AlphaAPIFields).ViaField("stepOverrides"))
 		errs = errs.Also(validateStepOverrides(ts.StepOverrides).ViaField("stepOverrides"))
+		errs = errs.Also(validateStepOverridesResourceRequirements(ts.Resources, ts.StepOverrides).ViaField("stepOverrides"))
 	}
 	if ts.SidecarOverrides != nil {
 		errs = errs.Also(ValidateEnabledAPIFields(ctx, "sidecarOverrides", config.AlphaAPIFields).ViaField("sidecarOverrides"))
@@ -136,6 +137,27 @@ func validateStepOverrides(overrides []TaskRunStepOverride) (errs *apis.FieldErr
 	}
 	errs = errs.Also(validateNoDuplicateNames(names, true))
 	return errs
+}
+
+// validateStepOverridesResourceRequirements validates if both step-level and task-level resource requirements are configured
+func validateStepOverridesResourceRequirements(resources *TaskRunResources, overrides []TaskRunStepOverride) (errs *apis.FieldError) {
+	for _, override := range overrides {
+		if override.Resources.Size() > 0 && isResourceRequirementsInTaskRun(resources) {
+			return &apis.FieldError{
+				Message: "TaskRun can't be configured with both step-level(stepOverrides.resources) and task-level(TaskRun.resources) resource requirements",
+				Paths:   []string{"resources"},
+			}
+		}
+	}
+	return nil
+}
+
+// isResourceRequirementsInTaskRun checks if resource requirements are configured in TaskRun under task-level
+func isResourceRequirementsInTaskRun(resources *TaskRunResources) bool {
+	if resources == nil {
+		return false
+	}
+	return resources.Limits != nil || resources.Requests != nil
 }
 
 func validateSidecarOverrides(overrides []TaskRunSidecarOverride) (errs *apis.FieldError) {

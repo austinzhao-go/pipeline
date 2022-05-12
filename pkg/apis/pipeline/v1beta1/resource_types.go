@@ -59,8 +59,8 @@ const (
 // AllResourceTypes can be used for validation to check if a provided Resource type is one of the known types.
 var AllResourceTypes = resource.AllResourceTypes
 
-// TaskResources allows a Pipeline to declare how its DeclaredPipelineResources
-// should be provided to a Task as its inputs and outputs.
+// TaskResources is overloaded to represent both PipelineResources and compute resources.
+// PipelineResources are deprecated and will be removed, so this field will only represent compute resources in the future.
 type TaskResources struct {
 	// Inputs holds the mapping from the PipelineResources declared in
 	// DeclaredPipelineResources to the input PipelineResources required by the Task.
@@ -70,6 +70,16 @@ type TaskResources struct {
 	// DeclaredPipelineResources to the input PipelineResources required by the Task.
 	// +listType=atomic
 	Outputs []TaskResource `json:"outputs,omitempty"`
+	// Limits describes the maximum amount of compute resources allowed for each Task.
+	// More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+	// +optional
+	Limits v1.ResourceList `json:"limits,omitempty"`
+	// Requests describes the minimum amount of compute resources required for each Task.
+	// If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+	// otherwise to an implementation-defined value.
+	// More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+	// +optional
+	Requests v1.ResourceList `json:"requests,omitempty"`
 }
 
 // TaskResource defines an input or output Resource declared as a requirement
@@ -81,7 +91,7 @@ type TaskResource struct {
 	ResourceDeclaration `json:",inline"`
 }
 
-// TaskRunResources allows a TaskRun to declare inputs and outputs TaskResourceBinding
+// TaskRunResources is overloaded to represent both TaskResourceBinding and compute resources.
 type TaskRunResources struct {
 	// Inputs holds the inputs resources this task was invoked with
 	// +listType=atomic
@@ -89,6 +99,16 @@ type TaskRunResources struct {
 	// Outputs holds the inputs resources this task was invoked with
 	// +listType=atomic
 	Outputs []TaskResourceBinding `json:"outputs,omitempty"`
+	// Limits describes the maximum amount of compute resources allowed for each TaskRun.
+	// More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+	// +optional
+	Limits v1.ResourceList `json:"limits,omitempty"`
+	// Requests describes the minimum amount of compute resources required for each TaskRun.
+	// If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+	// otherwise to an implementation-defined value.
+	// More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+	// +optional
+	Requests v1.ResourceList `json:"requests,omitempty"`
 }
 
 // TaskResourceBinding points to the PipelineResource that
