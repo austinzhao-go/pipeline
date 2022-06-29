@@ -418,6 +418,10 @@ func (c *Reconciler) reconcile(ctx context.Context, tr *v1beta1.TaskRun, rtr *re
 	logger := logging.FromContext(ctx)
 	recorder := controller.GetEventRecorder(ctx)
 
+	if tr.Spec.ComputeResources != nil {
+		applyTaskLevelComputeResources(tr, rtr)
+	}
+
 	ts := updateTaskSpecParamsContextsResults(tr, rtr)
 	tr.Status.TaskSpec = ts
 
@@ -498,6 +502,23 @@ func (c *Reconciler) reconcile(ctx context.Context, tr *v1beta1.TaskRun, rtr *re
 
 	logger.Infof("Successfully reconciled taskrun %s/%s with status: %#v", tr.Name, tr.Namespace, tr.Status.GetCondition(apis.ConditionSucceeded))
 	return nil
+}
+
+// applyTaskLevelComputeResources applies the task level compute resources to the pod
+func applyTaskLevelComputeResources(tr *v1beta1.TaskRun, rtr *resources.ResolvedTaskResources) {
+	ts := rtr.TaskSpec.DeepCopy()
+	if ts.StepTemplate != nil {
+		ts.StepTemplate.Resources = corev1.ResourceRequirements{}
+	}
+	for i := range ts.Steps {
+		if i == 0 {
+			ts.Steps[i].Resources.Requests = tr.Spec.ComputeResources.Requests
+		} else {
+			ts.Steps[i].Resources.Requests = nil
+		}
+		ts.Steps[i].Resources.Limits = tr.Spec.ComputeResources.Limits
+	}
+	rtr.TaskSpec = ts
 }
 
 func (c *Reconciler) updateTaskRunWithDefaultWorkspaces(ctx context.Context, tr *v1beta1.TaskRun, taskSpec *v1beta1.TaskSpec) error {

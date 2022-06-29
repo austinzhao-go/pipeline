@@ -818,6 +818,7 @@ func (c *Reconciler) createTaskRun(ctx context.Context, taskRunName string, para
 			PodTemplate:        taskRunSpec.TaskPodTemplate,
 			StepOverrides:      taskRunSpec.StepOverrides,
 			SidecarOverrides:   taskRunSpec.SidecarOverrides,
+			ComputeResources:   taskRunSpec.ComputeResources,
 		}}
 
 	if rpt.ResolvedTaskResources.TaskName != "" {

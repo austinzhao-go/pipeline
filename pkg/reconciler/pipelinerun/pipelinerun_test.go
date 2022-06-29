@@ -50,6 +50,7 @@ import (
 	"gomodules.xyz/jsonpatch/v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -9137,4 +9138,277 @@ spec:
 
 func lessTaskResourceBindings(i, j v1beta1.TaskResourceBinding) bool {
 	return i.Name < j.Name
+}
+
+func TestReconcile_ApplyTaskLevelComputeResources(t *testing.T) {
+	multiStepsTask := parse.MustParseTask(t, `
+metadata:
+  name: foo-task
+  namespace: default
+spec:
+  steps:
+  - name: 1st-step
+    image: foo-image
+    command: 
+    - /foo-cmd
+  - name: 2nd-step
+    image: foo-image
+    command: 
+    - /foo-cmd
+`)
+	simplePipeline := parse.MustParsePipeline(t, `
+metadata:
+  name: foo-pipeline
+  namespace: default
+spec:
+  tasks:
+  - name: 1st-task
+    taskRef:
+      name: foo-task
+`)
+	withSideCarTask := parse.MustParseTask(t, `
+metadata:
+  name: foo-sidecar-task
+  namespace: default
+spec:
+  steps:
+  - name: 1st-step
+    image: foo-image
+    command: 
+    - /foo-cmd
+  - name: 2nd-step
+    image: foo-image
+    command: 
+    - /foo-cmd 
+  sidecars:
+  - name: 1st-sidecar
+    image: foo-image
+    command: 
+    - /foo-cmd
+`)
+	withSideCarPipeline := parse.MustParsePipeline(t, `
+metadata:
+  name: foo-sidecar-pipeline
+  namespace: default
+spec:
+  tasks:
+  - name: 1st-task
+    taskRef:
+      name: foo-sidecar-task
+`)
+
+	testCases := []struct {
+		name                            string
+		pipeline                        *v1beta1.Pipeline
+		pipelineRun                     *v1beta1.PipelineRun
+		expectedComputeResources        []corev1.ResourceRequirements
+		expectedSidecarComputeResources []corev1.ResourceRequirements
+	}{{
+		name:     "only with requests",
+		pipeline: simplePipeline,
+		pipelineRun: parse.MustParsePipelineRun(t, `
+metadata:
+  name: foo-pipeline-run
+  namespace: default
+spec:
+  pipelineRef:
+    name: foo-pipeline
+  taskRunSpecs:
+  - pipelineTaskName: 1st-task
+    computeResources:
+      requests:
+        cpu: "500m"
+`),
+		expectedComputeResources: []corev1.ResourceRequirements{{
+			Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")},
+		}},
+	}, {
+		name:     "only with limits",
+		pipeline: simplePipeline,
+		pipelineRun: parse.MustParsePipelineRun(t, `
+metadata:
+  name: foo-pipeline-run
+  namespace: default
+spec:
+  pipelineRef:
+    name: foo-pipeline
+  taskRunSpecs:
+  - pipelineTaskName: 1st-task
+    computeResources:
+      limits:
+        cpu: "2"
+`),
+		expectedComputeResources: []corev1.ResourceRequirements{{
+			Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
+		}},
+	}, {
+		name:     "both with requests and limits",
+		pipeline: simplePipeline,
+		pipelineRun: parse.MustParsePipelineRun(t, `
+metadata:
+  name: foo-pipeline-run
+  namespace: default
+spec:
+  pipelineRef:
+    name: foo-pipeline
+  taskRunSpecs:
+  - pipelineTaskName: 1st-task
+    computeResources:
+      requests:
+        cpu: "500m"
+      limits:
+        cpu: "2"
+`),
+		expectedComputeResources: []corev1.ResourceRequirements{{
+			Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")},
+			Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
+		}},
+	}, {
+		name:     "both with cpu and memory",
+		pipeline: simplePipeline,
+		pipelineRun: parse.MustParsePipelineRun(t, `
+metadata:
+  name: foo-pipeline-run
+  namespace: default
+spec:
+  pipelineRef:
+    name: foo-pipeline
+  taskRunSpecs:
+  - pipelineTaskName: 1st-task
+    computeResources:
+      requests:
+        cpu: "1"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+`),
+		expectedComputeResources: []corev1.ResourceRequirements{{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("1Gi")},
+			Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
+		}},
+	}, {
+		name:     "both with cpu and memory",
+		pipeline: simplePipeline,
+		pipelineRun: parse.MustParsePipelineRun(t, `
+metadata:
+  name: foo-pipeline-run
+  namespace: default
+spec:
+  pipelineRef:
+    name: foo-pipeline
+  taskRunSpecs:
+  - pipelineTaskName: 1st-task
+    computeResources:
+      requests:
+        cpu: "1"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+`),
+		expectedComputeResources: []corev1.ResourceRequirements{{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("1Gi")},
+			Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
+		}},
+	}, {
+		name:     "sidecarOverrides with resource requirements",
+		pipeline: withSideCarPipeline,
+		pipelineRun: parse.MustParsePipelineRun(t, `
+metadata:
+  name: foo-sidecar-pipeline-run
+  namespace: default
+spec:
+  pipelineRef:
+    name: foo-sidecar-pipeline
+  taskRunSpecs:
+  - pipelineTaskName: 1st-task
+    sidecarOverrides:
+    - name: 1st-sidecar
+      resources:
+        requests:
+          cpu: "500m"
+          memory: "500Mi"
+    computeResources:
+      requests:
+        cpu: "1"
+        memory: "1Gi"
+`),
+		expectedComputeResources: []corev1.ResourceRequirements{{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("1Gi")},
+		}},
+		expectedSidecarComputeResources: []corev1.ResourceRequirements{{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("500m"),
+				corev1.ResourceMemory: resource.MustParse("500Mi")},
+		}},
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := test.Data{
+				PipelineRuns: []*v1beta1.PipelineRun{tc.pipelineRun},
+				Pipelines:    []*v1beta1.Pipeline{tc.pipeline},
+				Tasks:        []*v1beta1.Task{multiStepsTask, withSideCarTask},
+			}
+			prt := newPipelineRunTest(d, t)
+			defer prt.Cancel()
+
+			reconciledRun, clients := prt.reconcileRun("default", tc.pipelineRun.Name, []string{}, false)
+
+			if reconciledRun.Status.CompletionTime != nil {
+				t.Errorf("Expected a CompletionTime on valid PipelineRun, but got nil")
+			}
+
+			TaskRunList, err := clients.Pipeline.TektonV1beta1().TaskRuns("default").List(prt.TestAssets.Ctx, metav1.ListOptions{})
+			if err != nil {
+				t.Fatalf("Failure to list TaskRun's %s", err)
+			}
+
+			if err := verifyTaskLevelComputeResources(tc.expectedComputeResources, TaskRunList.Items); err != nil {
+				t.Errorf("TaskRun \"%s\" failed to verify task-level compute resource requirements, because: %v", tc.name, err)
+			}
+
+			if err := verifySidecarComputeResources(tc.expectedSidecarComputeResources, TaskRunList.Items); err != nil {
+				t.Errorf("TaskRun \"%s\" failed to verify sidecar compute resource requirements, because: %v", tc.name, err)
+			}
+		})
+	}
+}
+
+// verifyTaskLevelComputeResources verifies that the TaskRuns have the expected compute resources
+func verifyTaskLevelComputeResources(expectedComputeResources []corev1.ResourceRequirements, taskRuns []v1beta1.TaskRun) error {
+	if len(expectedComputeResources) != len(taskRuns) {
+		return fmt.Errorf("expected %d compute resource requirements, got %d", len(expectedComputeResources), len(taskRuns))
+	}
+	for i, r := range expectedComputeResources {
+		if d := cmp.Diff(r, *taskRuns[i].Spec.ComputeResources); d != "" {
+			return fmt.Errorf("TaskRun #%d resource requirements don't match %s", i, diff.PrintWantGot(d))
+		}
+	}
+	return nil
+}
+
+// verifySidecarComputeResources verifies that the Sidecars have the expected compute resources
+func verifySidecarComputeResources(expectedSidecarComputeResources []corev1.ResourceRequirements, taskRuns []v1beta1.TaskRun) error {
+	taskRunSidecarOverrides := []v1beta1.TaskRunSidecarOverride{}
+	for _, taskRun := range taskRuns {
+		for _, sidecarOverride := range taskRun.Spec.SidecarOverrides {
+			taskRunSidecarOverrides = append(taskRunSidecarOverrides, sidecarOverride)
+		}
+	}
+
+	if len(expectedSidecarComputeResources) != len(taskRunSidecarOverrides) {
+		return fmt.Errorf("expected %d sidecar compute resource requirements, got %d", len(expectedSidecarComputeResources), len(taskRunSidecarOverrides))
+	}
+	for i, r := range expectedSidecarComputeResources {
+		if d := cmp.Diff(r, taskRunSidecarOverrides[i].Resources); d != "" {
+			return fmt.Errorf("SidecarOverrides #%d resource requirements don't match %s", i, diff.PrintWantGot(d))
+		}
+	}
+	return nil
 }

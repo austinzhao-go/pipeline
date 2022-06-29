@@ -1437,6 +1437,305 @@ spec:
 	}
 }
 
+func TestReconcile_ApplyTaskLevelComputeResources(t *testing.T) {
+	multiStepsTask := parse.MustParseTask(t, `
+metadata:
+  name: foo-task
+  namespace: default
+spec:
+  steps:
+  - name: 1st-step
+    image: foo-image
+    command: 
+    - /foo-cmd
+  - name: 2nd-step
+    image: foo-image
+    command: 
+    - /foo-cmd 
+  - name: 3rd-step
+    image: foo-image
+    command: 
+    - /foo-cmd 
+`)
+	withStepTemplateTask := parse.MustParseTask(t, `
+metadata:
+  name: foo-task
+  namespace: default
+spec:
+  stepTemplate:
+    resources:
+      requests:
+        cpu: 500m
+  steps:
+  - name: 1st-step
+    image: foo-image
+    command: 
+    - /foo-cmd
+  - name: 2nd-step
+    image: foo-image
+    command: 
+    - /foo-cmd 
+`)
+	stepResourceRequirementsTask := parse.MustParseTask(t, `
+metadata:
+  name: foo-task
+  namespace: default
+spec:
+  steps:
+  - name: 1st-step
+    image: foo-image
+    command: 
+    - /foo-cmd
+    resources:
+      requests:
+        cpu: 500m
+  - name: 2nd-step
+    image: foo-image
+    command: 
+    - /foo-cmd 
+    resources:
+      requests:
+        cpu: 1
+`)
+	withSidecarTask := parse.MustParseTask(t, `
+metadata:
+  name: foo-task
+  namespace: default
+spec:
+  steps:
+  - name: 1st-step
+    image: foo-image
+    command: 
+    - /foo-cmd
+  - name: 2nd-step
+    image: foo-image
+    command: 
+    - /foo-cmd 
+  sidecars:
+  - name: 1st-sidecar
+    resources:
+      requests:
+        cpu: 750m
+      limits:
+        cpu: 1.5
+`)
+
+	testCases := []struct {
+		name                     string
+		task                     *v1beta1.Task
+		taskRun                  *v1beta1.TaskRun
+		expectedComputeResources []corev1.ResourceRequirements
+	}{{
+		name: "only with requests",
+		task: multiStepsTask,
+		taskRun: parse.MustParseTaskRun(t, `
+metadata:
+  name: foo-taskrun
+  namespace: default
+spec:
+  taskRef:
+    name: foo-task
+  computeResources:
+    requests:
+      cpu: "1"
+`),
+		expectedComputeResources: []corev1.ResourceRequirements{{
+			Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")},
+		}, {
+			Requests: nil,
+		}, {
+			Requests: nil,
+		}},
+	}, {
+		name: "only with limits",
+		task: multiStepsTask,
+		taskRun: parse.MustParseTaskRun(t, `
+metadata:
+  name: foo-taskrun
+  namespace: default
+spec:
+  taskRef:
+    name: foo-task
+  computeResources:
+    limits:
+      cpu: "500m"
+`),
+		expectedComputeResources: []corev1.ResourceRequirements{{
+			Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")},
+		}, {
+			Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")},
+		}, {
+			Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")},
+		}},
+	}, {
+		name: "both with requests and limits",
+		task: multiStepsTask,
+		taskRun: parse.MustParseTaskRun(t, `
+metadata:
+  name: foo-taskrun
+  namespace: default
+spec:
+  taskRef:
+    name: foo-task
+  computeResources:
+    requests:
+      cpu: "1"
+    limits:
+      cpu: "2"
+`),
+		expectedComputeResources: []corev1.ResourceRequirements{{
+			Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")},
+			Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
+		}, {
+			Requests: nil,
+			Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
+		}, {
+			Requests: nil,
+			Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
+		}},
+	}, {
+		name: "both with cpu and memory",
+		task: multiStepsTask,
+		taskRun: parse.MustParseTaskRun(t, `
+metadata:
+  name: foo-taskrun
+  namespace: default
+spec:
+  taskRef:
+    name: foo-task
+  computeResources:
+    requests:
+      cpu: "1"
+      memory: "500Mi"
+    limits:
+      memory: "1Gi"
+`),
+		expectedComputeResources: []corev1.ResourceRequirements{{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("500Mi"),
+			},
+			Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+		}, {
+			Requests: nil,
+			Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+		}, {
+			Requests: nil,
+			Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+		}},
+	}, {
+		name: "overwrite StepTemplate resources requirements",
+		task: withStepTemplateTask,
+		taskRun: parse.MustParseTaskRun(t, `
+metadata:
+  name: foo-taskrun
+  namespace: default
+spec:
+  taskRef:
+    name: foo-task
+  computeResources:
+    requests:
+      cpu: "1"
+`),
+		expectedComputeResources: []corev1.ResourceRequirements{{
+			Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")},
+		}, {
+			Requests: nil,
+		}},
+	}, {
+		name: "overwrite step-level resources requirements",
+		task: stepResourceRequirementsTask,
+		taskRun: parse.MustParseTaskRun(t, `
+metadata:
+  name: foo-taskrun
+  namespace: default
+spec:
+  taskRef:
+    name: foo-task
+  computeResources:
+    requests:
+      cpu: "2"
+`),
+		expectedComputeResources: []corev1.ResourceRequirements{{
+			Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
+		}, {
+			Requests: nil,
+		}},
+	}, {
+		name: "with sidecar resource requirements",
+		task: withSidecarTask,
+		taskRun: parse.MustParseTaskRun(t, `
+metadata:
+  name: foo-taskrun
+  namespace: default
+spec:
+  taskRef:
+    name: foo-task
+  computeResources:
+    requests:
+      cpu: "4"
+`),
+		expectedComputeResources: []corev1.ResourceRequirements{{
+			Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4")},
+		}, {
+			Requests: nil,
+		}, {
+			// the expected sidecar resource requirements
+			Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("750m")},
+			Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1.5")},
+		}},
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.taskRun.Status.StartTime = &metav1.Time{Time: testClock.Now()}
+
+			d := test.Data{
+				Tasks:    []*v1beta1.Task{tc.task},
+				TaskRuns: []*v1beta1.TaskRun{tc.taskRun},
+			}
+
+			testAssets, cancel := getTaskRunController(t, d)
+			defer cancel()
+			createServiceAccount(t, testAssets, "default", "default")
+
+			// a requeue error is expected by the "running" TaskRun
+			if err := testAssets.Controller.Reconciler.Reconcile(testAssets.Ctx, getRunName(tc.taskRun)); err == nil {
+				t.Errorf("expected no error when reconciling invalid TaskRun, but got an error: %s", err)
+			} else if ok, _ := controller.IsRequeueKey(err); !ok {
+				t.Errorf("expected a requeue error, but got an error: %v", err)
+			}
+
+			tr, err := testAssets.Clients.Pipeline.TektonV1beta1().TaskRuns(tc.taskRun.Namespace).Get(testAssets.Ctx, tc.taskRun.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Errorf("expected TaskRun %s to exist, but instead got an error: %v", tc.taskRun.Name, err)
+			}
+
+			pod, err := testAssets.Clients.Kube.CoreV1().Pods(tr.Namespace).Get(testAssets.Ctx, tr.Status.PodName, metav1.GetOptions{})
+			if err != nil {
+				t.Errorf("failed to fetch the Pod: %v", err)
+			}
+
+			if err := verifyTaskLevelComputeResources(tc.expectedComputeResources, pod.Spec.Containers); err != nil {
+				t.Errorf("TaskRun \"%s\" failed to verify task-level compute resource requirements, because: %v", tc.name, err)
+			}
+		})
+	}
+}
+
+// verifyTaskLevelComputeResources verifies that the given pod spec containers have the expected compute resources
+func verifyTaskLevelComputeResources(expectedComputeResources []corev1.ResourceRequirements, podContainers []corev1.Container) error {
+	if len(expectedComputeResources) != len(podContainers) {
+		return fmt.Errorf("expected %d compute resource requirements, got %d", len(expectedComputeResources), len(podContainers))
+	}
+	for i, r := range expectedComputeResources {
+		if d := cmp.Diff(r, podContainers[i].Resources); d != "" {
+			return fmt.Errorf("TaskRun #%d resource requirements don't match %s", i, diff.PrintWantGot(d))
+		}
+	}
+	return nil
+}
+
 func TestReconcile_SetsStartTime(t *testing.T) {
 	taskRun := parse.MustParseTaskRun(t, `
 metadata:
