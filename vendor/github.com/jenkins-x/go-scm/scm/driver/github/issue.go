@@ -125,7 +125,7 @@ func (s *issueService) List(ctx context.Context, repo string, opts scm.IssueList
 	return convertIssueList(out), res, err
 }
 
-func (s *issueService) ListComments(ctx context.Context, repo string, index int, opts scm.ListOptions) ([]*scm.Comment, *scm.Response, error) {
+func (s *issueService) ListComments(ctx context.Context, repo string, index int, opts *scm.ListOptions) ([]*scm.Comment, *scm.Response, error) {
 	path := fmt.Sprintf("repos/%s/issues/%d/comments?%s", repo, index, encodeListOptions(opts))
 	out := []*issueComment{}
 	res, err := s.client.do(ctx, "GET", path, nil, &out)
@@ -143,14 +143,14 @@ func (s *issueService) Create(ctx context.Context, repo string, input *scm.Issue
 	return convertIssue(out), res, err
 }
 
-func (s *issueService) ListLabels(ctx context.Context, repo string, number int, opts scm.ListOptions) ([]*scm.Label, *scm.Response, error) {
+func (s *issueService) ListLabels(ctx context.Context, repo string, number int, opts *scm.ListOptions) ([]*scm.Label, *scm.Response, error) {
 	path := fmt.Sprintf("repos/%s/issues/%d/labels?%s", repo, number, encodeListOptions(opts))
 	out := []*label{}
 	res, err := s.client.do(ctx, "GET", path, nil, &out)
 	return convertLabelObjects(out), res, err
 }
 
-func (s *issueService) ListEvents(ctx context.Context, repo string, number int, opts scm.ListOptions) ([]*scm.ListedIssueEvent, *scm.Response, error) {
+func (s *issueService) ListEvents(ctx context.Context, repo string, number int, opts *scm.ListOptions) ([]*scm.ListedIssueEvent, *scm.Response, error) {
 	path := fmt.Sprintf("repos/%s/issues/%d/events?%s", repo, number, encodeListOptions(opts))
 	out := []*listedIssueEvent{}
 	res, err := s.client.do(ctx, "GET", path, nil, &out)
@@ -266,7 +266,7 @@ type issue struct {
 	UpdatedAt time.Time `json:"updated_at"`
 
 	// This will be non-nil if it is a pull request.
-	PullRequest *struct{} `json:"pull_request,omitempty"`
+	PullRequest pr `json:"pull_request,omitempty"`
 }
 
 type issueInput struct {
@@ -362,11 +362,14 @@ func convertIssue(from *issue) *scm.Issue {
 			Login:  from.User.Login,
 			Avatar: from.User.AvatarURL,
 		},
-		ClosedBy:    closedBy,
-		Assignees:   convertUsers(from.Assignees),
-		PullRequest: from.PullRequest != nil,
-		Created:     from.CreatedAt,
-		Updated:     from.UpdatedAt,
+		ClosedBy:  closedBy,
+		Assignees: convertUsers(from.Assignees),
+		PullRequest: &scm.PullRequest{
+			DiffLink: from.PullRequest.DiffURL,
+			Link:     from.PullRequest.HTMLURL,
+		},
+		Created: from.CreatedAt,
+		Updated: from.UpdatedAt,
 	}
 }
 
